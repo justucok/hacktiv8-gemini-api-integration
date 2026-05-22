@@ -4,9 +4,9 @@ Backend sederhana berbasis **Node.js + Express** dengan integrasi **Google Gemin
 
 Project ini dibuat untuk latihan kelas AI Productivity & AI API Integration (Hacktiv8).
 
-## Frontend (repo terpisah)
+## Frontend (hactiv8-gemini-chatbot)
 
-UI chatbot berada di folder **`Gemini Chatbot/`** (di luar folder backend ini). Rencananya frontend akan disimpan di **repository terpisah**.
+UI chatbot berada di folder **`Gemini Chatbot/`** (repository havtiv8-gemini-chatbot)**.
 
 Saat development lokal, `index.js` masih bisa menyajikan file statis dari `../Gemini Chatbot/public` agar chatbot bisa diuji tanpa repo frontend terpisah. Setelah frontend dipindah ke repo lain, arahkan URL API frontend ke base URL backend ini (misalnya `http://localhost:3000`) dan tambahkan konfigurasi **CORS** di backend jika origin frontend berbeda.
 
