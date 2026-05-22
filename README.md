@@ -1,40 +1,53 @@
 # Gemini API Integration
 
-Project ini adalah backend sederhana berbasis **Node.js + Express** untuk integrasi ke **Google Gemini API** menggunakan SDK `@google/genai`.
+Backend sederhana berbasis **Node.js + Express** dengan integrasi **Google Gemini API** (`@google/genai`) untuk mendukung aplikasi chatbot. Server menerima percakapan dalam format JSON, memanggil model Gemini, lalu mengembalikan balasan teks.
 
-Aplikasi ini dibuat untuk latihan kelas AI Productivity & AI API Integration (Hacktiv8), dengan fokus pada penggunaan Gemini untuk beberapa tipe input:
-- Prompt teks biasa
-- Gambar (`multipart/form-data`)
-- Dokumen (`multipart/form-data`)
-- Audio (`multipart/form-data`)
+Project ini dibuat untuk latihan kelas AI Productivity & AI API Integration (Hacktiv8).
+
+## Frontend (repo terpisah)
+
+UI chatbot berada di folder **`Gemini Chatbot/`** (di luar folder backend ini). Rencananya frontend akan disimpan di **repository terpisah**.
+
+Saat development lokal, `index.js` masih bisa menyajikan file statis dari `../Gemini Chatbot/public` agar chatbot bisa diuji tanpa repo frontend terpisah. Setelah frontend dipindah ke repo lain, arahkan URL API frontend ke base URL backend ini (misalnya `http://localhost:3000`) dan tambahkan konfigurasi **CORS** di backend jika origin frontend berbeda.
 
 ## Fitur Utama
 
-- Endpoint `POST /generate-content` untuk generate respon dari prompt teks.
-- Endpoint `POST /generate-image` untuk analisis/generasi respon berbasis gambar + prompt.
-- Endpoint `POST /generate-document` untuk analisis dokumen + prompt.
-- Endpoint `POST /generate-audio` untuk analisis audio + prompt.
-- Parsing form-data menggunakan `multer`.
+- **Chat multi-turn** lewat endpoint `POST /api/conversation` menggunakan `ai.chats.create()` agar konteks percakapan tetap terjaga.
+- **Chat satu request** lewat endpoint `POST /api/singe-chat` dengan mengirim seluruh array percakapan sekaligus ke `generateContent`.
+- **Instruksi sistem** tetap meminta Gemini menjawab dalam bahasa Indonesia.
+- **Validasi input** dasar pada body JSON (tipe data, array kosong, format history).
+- **Penanganan rate limit** pada `/api/conversation` (status `429` jika kuota Gemini habis).
+- **Serving file statis** (opsional, untuk development) dari folder `Gemini Chatbot/public`.
+
+Versi lama backend yang mendukung upload gambar, dokumen, dan audio ada di **`index_old.js`** (endpoint `/generate-content`, `/generate-image`, dll.). File tersebut tidak lagi dipakai oleh `index.js` saat ini.
 
 ## Tech Stack
 
-- Node.js
+- Node.js (ES modules)
 - Express
 - `@google/genai`
-- Multer
 - Dotenv
-- Nodemon
+- Nodemon (development)
 
 ## Struktur Project
 
 ```bash
 Gemini API Integration/
-├── index.js
+├── index.js          # Entry point backend chatbot
+├── index_old.js      # Versi lama (multipart: teks, gambar, dokumen, audio)
 ├── package.json
 ├── package-lock.json
-├── .env
+├── .env              # Konfigurasi (jangan di-commit)
+├── .env_example      # Contoh variabel environment
 └── .gitignore
 ```
+
+### Alur program di `index.js`
+
+1. **Inisialisasi** — Load environment (`dotenv`), buat instance `GoogleGenAI`, baca `GEMINI_MODEL` dan `API_PORT`.
+2. **Middleware** — `express.json()` untuk body JSON; `express.static` ke `Gemini Chatbot/public` (development).
+3. **Routing** — Handler `POST /api/conversation` dan `POST /api/singe-chat` memanggil Gemini lalu mengembalikan JSON.
+4. **Listen** — Server berjalan di port dari `API_PORT` (default `3000`).
 
 ## Cara Menjalankan
 
@@ -44,10 +57,12 @@ Gemini API Integration/
 npm install
 ```
 
-2. Isi file `.env` dengan API key Gemini:
+2. Salin dan isi environment (lihat `.env_example`):
 
 ```env
 GEMINI_API_KEY=your_api_key_here
+GEMINI_MODEL=gemini-3.5-flash
+API_PORT=3000
 ```
 
 3. Jalankan server development:
@@ -56,115 +71,166 @@ GEMINI_API_KEY=your_api_key_here
 npm run dev
 ```
 
-4. Server akan aktif di:
+4. Server aktif di:
 
-```bash
+```text
 http://localhost:3000
 ```
 
+Jika folder `Gemini Chatbot/public` ada di path relatif yang benar, buka URL di atas di browser untuk menguji UI. Frontend memanggil `POST /api/conversation`.
+
 ## Konfigurasi API
 
-Di `index.js`, SDK diinisialisasi dengan:
+SDK diinisialisasi tanpa parameter eksplisit; API key dibaca dari environment:
 
 ```js
 const ai = new GoogleGenAI({});
 ```
 
-Library `@google/genai` akan membaca API key dari environment variable (misalnya `GEMINI_API_KEY`).
-
-Model default yang dipakai saat ini:
+Model dan port bisa diatur lewat `.env`:
 
 ```js
-const GEMINI_MODEL = 'gemini-3.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const PORT = process.env.API_PORT || 3000;
 ```
 
-Jika model tersebut tidak tersedia di akun/region kamu, ganti ke model Gemini yang tersedia di project Google AI Studio kamu.
+Jika model tidak tersedia di akun/region Anda, ganti `GEMINI_MODEL` ke model yang aktif di [Google AI Studio](https://aistudio.google.com/).
 
 ## Dokumentasi Endpoint
 
 Base URL:
 
-```bash
+```text
 http://localhost:3000
 ```
 
-### 1) Generate dari Prompt Teks
+Semua endpoint chat menggunakan **`Content-Type: application/json`**.
 
-- **Method**: `POST`
-- **Path**: `/generate-content`
-- **Content-Type**: `multipart/form-data` atau `application/x-www-form-urlencoded`
-- **Body**:
-  - `prompt` (string, wajib)
+### 1) Percakapan dengan history (disarankan)
 
-Contoh cURL:
+Endpoint utama yang dipakai frontend di `Gemini Chatbot/public/script.js`.
 
-```bash
-curl -X POST http://localhost:3000/generate-content \
-  -F "prompt=Jelaskan konsep AI secara singkat"
-```
+| Item | Nilai |
+|------|--------|
+| **Method** | `POST` |
+| **Path** | `/api/conversation` |
+| **Content-Type** | `application/json` |
 
-Contoh response sukses:
+**Body (format A — pesan tunggal + history opsional):**
 
 ```json
 {
-  "result": "AI adalah teknologi yang memungkinkan mesin meniru kemampuan kognitif manusia..."
+  "message": "Halo, siapa kamu?",
+  "history": [
+    { "role": "user", "text": "Pesan sebelumnya" },
+    { "role": "model", "text": "Balasan sebelumnya" }
+  ]
 }
 ```
 
-### 2) Generate dari Gambar + Prompt
+- `message` (string, wajib) — pesan user terbaru.
+- `history` (array, opsional) — giliran sebelumnya. Setiap item bisa memakai `text` atau `parts` (format Gemini).
 
-- **Method**: `POST`
-- **Path**: `/generate-image`
-- **Content-Type**: `multipart/form-data`
-- **Body**:
-  - `prompt` (string, wajib)
-  - `image` (file, wajib)
+**Body (format B — array percakapan, kompatibel dengan frontend):**
 
-Contoh cURL:
-
-```bash
-curl -X POST http://localhost:3000/generate-image \
-  -F "prompt=Deskripsikan isi gambar ini" \
-  -F "image=@/path/ke/gambar.jpg"
+```json
+{
+  "conversation": [
+    { "role": "user", "text": "Halo" },
+    { "role": "model", "text": "Halo! Ada yang bisa dibantu?" },
+    { "role": "user", "text": "Jelaskan Node.js singkat" }
+  ]
+}
 ```
 
-### 3) Generate dari Dokumen + Prompt
+- `conversation` (array, wajib jika dipakai) — tidak boleh kosong. Pesan terakhir dianggap sebagai input user; sisanya menjadi history.
 
-- **Method**: `POST`
-- **Path**: `/generate-document`
-- **Content-Type**: `multipart/form-data`
-- **Body**:
-  - `prompt` (string, wajib)
-  - `document` (file, wajib)
+**Response sukses (`200`):**
 
-Contoh cURL:
-
-```bash
-curl -X POST http://localhost:3000/generate-document \
-  -F "prompt=Ringkas dokumen ini dalam 5 poin" \
-  -F "document=@/path/ke/dokumen.pdf"
+```json
+{
+  "result": "Teks balasan dari Gemini",
+  "history": [ "...format lengkap dari SDK..." ],
+  "simpleHistory": [
+    { "role": "user", "text": "..." },
+    { "role": "model", "text": "..." }
+  ]
+}
 ```
 
-### 4) Generate dari Audio + Prompt
-
-- **Method**: `POST`
-- **Path**: `/generate-audio`
-- **Content-Type**: `multipart/form-data`
-- **Body**:
-  - `prompt` (string, wajib)
-  - `audio` (file, wajib)
-
-Contoh cURL:
+**Contoh cURL (format conversation):**
 
 ```bash
-curl -X POST http://localhost:3000/generate-audio \
-  -F "prompt=Transkrip dan rangkum audio ini" \
-  -F "audio=@/path/ke/audio.mp3"
+curl -X POST http://localhost:3000/api/conversation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversation": [
+      { "role": "user", "text": "Apa itu REST API?" }
+    ]
+  }'
 ```
 
-## Format Error Response
+**Error umum:**
 
-Semua endpoint akan mengembalikan format error:
+| Status | Kondisi |
+|--------|---------|
+| `400` | `message` kosong/invalid, `history` bukan array, format item history salah, `conversation` kosong |
+| `429` | Kuota / rate limit Gemini |
+| `500` | Error lain dari Gemini atau server |
+
+---
+
+### 2) Chat satu request (seluruh percakapan sekaligus)
+
+| Item | Nilai |
+|------|--------|
+| **Method** | `POST` |
+| **Path** | `/api/singe-chat` |
+| **Content-Type** | `application/json` |
+
+**Body:**
+
+```json
+{
+  "conversation": [
+    { "role": "user", "text": "Halo" },
+    { "role": "model", "text": "Halo! Ada yang bisa dibantu?" },
+    { "role": "user", "text": "Buatkan 3 ide nama produk kopi" }
+  ]
+}
+```
+
+- `conversation` (array, wajib) — setiap item harus punya `role` (`"user"` atau `"model"`) dan `text` (string).
+
+**Response sukses (`200`):**
+
+```json
+{
+  "result": "Teks balasan dari Gemini"
+}
+```
+
+**Response validasi gagal (`400`):**
+
+```json
+{
+  "message": "Invalid Request"
+}
+```
+
+**Contoh cURL:**
+
+```bash
+curl -X POST http://localhost:3000/api/singe-chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversation": [
+      { "role": "user", "text": "Sebutkan 2 manfaat belajar AI" }
+    ]
+  }'
+```
+
+**Response error server (`500`):**
 
 ```json
 {
@@ -172,22 +238,45 @@ Semua endpoint akan mengembalikan format error:
 }
 ```
 
-dengan status code `500` jika terjadi kegagalan proses ke Gemini API.
+---
+
+### File statis (development)
+
+| Item | Nilai |
+|------|--------|
+| **Method** | `GET` |
+| **Path** | `/`, `/index.html`, `/script.js`, dll. |
+| **Sumber** | `../Gemini Chatbot/public` |
+
+Hanya relevan saat struktur monorepo lokal masih ada. Setelah frontend di repo terpisah, gunakan hosting frontend sendiri dan panggil API backend lewat URL penuh.
+
+## Konfigurasi Gemini per request
+
+Pada kedua endpoint chat, konfigurasi model antara lain:
+
+- **Model**: `GEMINI_MODEL` dari environment
+- **Temperature**: `0.9`
+- **System instruction**: `"Jawab hanya menggunakan bahasa Indonesia."`
+
+## Format Error Response
+
+- `/api/conversation` — `{ "error": "pesan error" }` (dan `429` untuk rate limit)
+- `/api/singe-chat` — `{ "message": "Invalid Request" }` untuk validasi; `{ "error": "..." }` untuk error server
 
 ## Catatan Implementasi
 
-- File upload saat ini diproses in-memory oleh `multer()` (belum disimpan ke disk).
-- Input file dikonversi ke Base64 lalu dikirim sebagai `inlineData` ke Gemini.
-- Validasi `prompt` dan file belum ketat; bisa ditambah agar API lebih robust.
-- Endpoint belum memiliki authentication/authorization (masih untuk kebutuhan belajar).
+- Backend saat ini fokus pada **teks**; tidak ada upload file di `index.js`.
+- Belum ada **authentication**, **CORS** eksplisit, atau **rate limiting** di sisi Express (hanya deteksi error kuota dari Gemini).
+- Path `/api/singe-chat` mengikuti penamaan di kode (typo *singe*); konsistenkan penamaan di kode dan dokumentasi jika nanti di-refactor.
+- Untuk produksi: pisahkan frontend ke repo sendiri, aktifkan CORS, batasi origin, dan jangan expose `GEMINI_API_KEY` ke client.
 
 ## Pengembangan Lanjutan (Opsional)
 
-- Tambah validasi request (`prompt` kosong, tipe file, ukuran file).
-- Tambah middleware error handling terpusat.
-- Tambah logging yang lebih rapi.
-- Tambah endpoint health check (`GET /health`).
-- Tambah rate limiting untuk proteksi abuse.
+- Tambah middleware CORS untuk frontend di repo terpisah.
+- Tambah `GET /health` untuk health check.
+- Validasi panjang percakapan dan jumlah token.
+- Perbaiki dan uji endpoint `/api/singe-chat` (validasi urutan `contents` di handler).
+- Environment variable `FRONTEND_URL` untuk konfigurasi CORS.
 
 ## Lisensi
 
